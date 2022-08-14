@@ -21,6 +21,8 @@ import sys
 import getopt
 import igraph
 
+
+
 # make numpy print prettier
 np.set_printoptions(suppress=True)
 
@@ -61,6 +63,12 @@ class CalibrationTargetDetector(object):
     
 class CameraChainValidator(object):
     def __init__(self, chainConfig, targetParams):
+
+        self.total_mean_reprojection_error_x = 0
+        self.total_std_reprojection_error_x = 0
+        self.total_mean_reprojection_error_y = 0
+        self.total_std_reprojection_error_y = 0
+        self.total_images = 0
         
         self.chainConfig = chainConfig
         self.numCameras = chainConfig.numCameras()
@@ -277,7 +285,7 @@ class CameraChainValidator(object):
             reproj_L2_errs = np.sum(np.abs(reproj_errs)**2, axis=-2)**(1./2)
             outputList = [ ( "mean_x:  ", np.mean(reproj_errs[:,0]) ),
                            ( "std_x:   ", np.std(reproj_errs[:,0]) ),
-                           ( "max_y:   ", np.max(reproj_errs[:,0]) ),
+                           ( "max_x:   ", np.max(reproj_errs[:,0]) ),
                            ( "min_x:   ", np.min(reproj_errs[:,0]) ),
                            ( "", 0),
                            ( "mean_y:  ", np.mean(reproj_errs[:,1]) ),
@@ -289,6 +297,17 @@ class CameraChainValidator(object):
                            ( "std_L2:  ", np.std(reproj_L2_errs) ),
                            ( "max_L2:  ", np.max(reproj_L2_errs) ),
                            ( "min_L2:  ", np.min(reproj_L2_errs) )      ]
+
+            self.total_mean_reprojection_error_x += abs(np.mean(reproj_errs[:,0]))
+            self.total_std_reprojection_error_x += abs(np.std(reproj_errs[:,0]))
+            self.total_mean_reprojection_error_y += abs(np.mean(reproj_errs[:,1]))
+            self.total_std_reprojection_error_y += abs(np.std(reproj_errs[:,1]))
+            self.total_images += 1
+
+            print('Total mean reprojection error per image in x:   ', self.total_mean_reprojection_error_x/self.total_images)
+            print('Total std reprojection error per image in x:    ', self.total_std_reprojection_error_x/self.total_images)
+            print('Total mean reprojection error per image in y:   ', self.total_mean_reprojection_error_y/self.total_images)
+            print('Total std reprojection error per image in y:    ', self.total_std_reprojection_error_y/self.total_images)
     
             #print the text
             y = 20; x = 20
