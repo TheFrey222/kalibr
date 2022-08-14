@@ -304,10 +304,10 @@ class CameraChainValidator(object):
             self.total_std_reprojection_error_y += abs(np.std(reproj_errs[:,1]))
             self.total_images += 1
 
-            print('Total mean reprojection error per image in x:   ', self.total_mean_reprojection_error_x/self.total_images)
-            print('Total std reprojection error per image in x:    ', self.total_std_reprojection_error_x/self.total_images)
-            print('Total mean reprojection error per image in y:   ', self.total_mean_reprojection_error_y/self.total_images)
-            print('Total std reprojection error per image in y:    ', self.total_std_reprojection_error_y/self.total_images)
+            print('Stereo total mean reprojection error per image in x:   ', self.total_mean_reprojection_error_x/self.total_images)
+            print('Stereo total std reprojection error per image in x:    ', self.total_std_reprojection_error_x/self.total_images)
+            print('Stereo total mean reprojection error per image in y:   ', self.total_mean_reprojection_error_y/self.total_images)
+            print('Stereo total std reprojection error per image in y:    ', self.total_std_reprojection_error_y/self.total_images)
     
             #print the text
             y = 20; x = 20
@@ -399,6 +399,12 @@ class CameraChainValidator(object):
 class MonoCameraValidator(object):
     def __init__(self, camConfig, targetParams):
         
+        self.total_mean_reprojection_error_x = 0
+        self.total_std_reprojection_error_x = 0
+        self.total_mean_reprojection_error_y = 0
+        self.total_std_reprojection_error_y = 0
+        self.total_images = 0
+
         print("initializing camera geometry")
         self.camera = kc.ConfigReader.AslamCamera.fromParameters(camConfig)
         self.target = CalibrationTargetDetector(self.camera, targetConfig)
@@ -462,6 +468,18 @@ class MonoCameraValidator(object):
                            ( "std_L2:  ", np.std(reprojectionErrors) ),
                            ( "max_L2:  ", np.max(reprojectionErrors) ),
                            ( "min_L2:  ", np.min(reprojectionErrors) )      ]
+
+            self.total_mean_reprojection_error_x += abs(np.mean(reprojectionErrors2[:,0]))
+            self.total_std_reprojection_error_x += abs(np.std(reprojectionErrors2[:,0]))
+            self.total_mean_reprojection_error_y += abs(np.mean(reprojectionErrors2[:,1]))
+            self.total_std_reprojection_error_y += abs(np.std(reprojectionErrors2[:,1]))
+            self.total_images += 1
+
+            print('Mono total mean reprojection error per image in x:   ', self.total_mean_reprojection_error_x/self.total_images)
+            print('Mono total std reprojection error per image in x:    ', self.total_std_reprojection_error_x/self.total_images)
+            print('Mono total mean reprojection error per image in y:   ', self.total_mean_reprojection_error_y/self.total_images)
+            print('Mono total std reprojection error per image in y:    ', self.total_std_reprojection_error_y/self.total_images)
+    
 
             #print the text
             y = 20; x = 20
