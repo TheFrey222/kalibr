@@ -20,7 +20,8 @@ import argparse
 import sys
 import getopt
 import igraph
-
+from math import dist
+import matplotlib.pyplot as plt
 
 
 # make numpy print prettier
@@ -232,8 +233,6 @@ class CameraChainValidator(object):
         
         #get the common corners
         common_ids = set(keypoints_A_id) & set(keypoints_B_id)
-
-
         
         #project points from camera A to cam B to compare with detection
         #and vice versa
@@ -246,10 +245,26 @@ class CameraChainValidator(object):
                 commonKeypoints_A.append( keypoints_A[np.where(keypoints_A_id==id)] )
                 commonKeypoints_B.append( keypoints_B[np.where(keypoints_B_id==id)] )
                 commonTargetPoints.append( targetPoints[np.where(keypoints_A_id==id)] )
-            
-            keypoints_4d = cv2.triangulatePoints(self.Pna, self.Pnb, np.asarray(commonKeypoints_A), np.asarray(commonKeypoints_B))
 
-            print(keypoints_4d)
+
+            # Estimate Apriltag size
+            keypoints_4d = cv2.triangulatePoints(self.Pna, self.Pnb, np.asarray(commonKeypoints_A), np.asarray(commonKeypoints_B))
+            keypoints_4d_normed = keypoints_4d[:3,:]/keypoints_4d[3,:]
+
+            if len(keypoints_4d[0,:]) > 1:
+
+                x0 = min(keypoints_4d_normed[0,:])
+                y0 = min(keypoints_4d_normed[1,:])
+                
+                keypoints_4d_normed[0,:] -= x0
+                keypoints_4d_normed[1,:] -= y0
+
+                dist_01 = dist(keypoints_4d_normed[:,0], keypoints_4d_normed[:,1])
+                print("\nWidth of apriltag:  {} m".format(round(dist_01, 5)))
+                error = abs(0.0213 - dist_01) / 0.0213 * 100
+                print("Error:              {} %".format(round(error, 5)))
+                print("Distance to panel:  {} m".format(abs(round(keypoints_4d_normed[2,1], 5))))
+            
 
             for keypoint_A, keypoint_B, targetPoint in zip(commonKeypoints_A, commonKeypoints_B, commonTargetPoints):
                 #reproject
