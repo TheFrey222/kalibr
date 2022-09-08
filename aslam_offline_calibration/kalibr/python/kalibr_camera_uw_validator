@@ -65,6 +65,9 @@ class CalibrationTargetDetector(object):
 class CameraChainValidator(object):
     def __init__(self, chainConfig, targetParams):
 
+        self.matches_total = 0
+        self.images_total = 0
+
         self.total_mean_reprojection_error_x = 0
         self.total_std_reprojection_error_x = 0
         self.total_mean_reprojection_error_y = 0
@@ -198,22 +201,19 @@ class CameraChainValidator(object):
         
         return T_BA
 
-    def rectifyImages(self, imageA, mapA, imageB, mapB):
+    def rectifyImages(self, imageA, imageB, mapA, mapB):
         #rectify images
         rect_image_A = cv2.remap(imageA,
                                  mapA[0],
                                  mapA[1],
                                  cv2.INTER_LINEAR)
-        
+
         rect_image_B = cv2.remap(imageB,
                                  mapB[0],
                                  mapB[1],
                                  cv2.INTER_LINEAR)
-        
-        #combine the images    
-        np_rect_image = np.hstack( (rect_image_A, rect_image_B) )
-        
-        return np_rect_image
+               
+        return rect_image_A[67:407, 133:591], rect_image_B[70:410, 179:637]
 
     def generatePairView(self, camAnr, camBnr):
 
@@ -247,23 +247,23 @@ class CameraChainValidator(object):
                 commonTargetPoints.append( targetPoints[np.where(keypoints_A_id==id)] )
 
 
-            # Estimate Apriltag size
-            keypoints_4d = cv2.triangulatePoints(self.Pna, self.Pnb, np.asarray(commonKeypoints_A), np.asarray(commonKeypoints_B))
-            keypoints_4d_normed = keypoints_4d[:3,:]/keypoints_4d[3,:]
+            # # Estimate Apriltag size
+            # keypoints_4d = cv2.triangulatePoints(self.Pna, self.Pnb, np.asarray(commonKeypoints_A), np.asarray(commonKeypoints_B))
+            # keypoints_4d_normed = keypoints_4d[:3,:]/keypoints_4d[3,:]
 
-            if len(keypoints_4d[0,:]) > 1:
+            # if len(keypoints_4d[0,:]) > 1:
 
-                x0 = min(keypoints_4d_normed[0,:])
-                y0 = min(keypoints_4d_normed[1,:])
+            #     x0 = min(keypoints_4d_normed[0,:])
+            #     y0 = min(keypoints_4d_normed[1,:])
                 
-                keypoints_4d_normed[0,:] -= x0
-                keypoints_4d_normed[1,:] -= y0
+            #     keypoints_4d_normed[0,:] -= x0
+            #     keypoints_4d_normed[1,:] -= y0
 
-                dist_01 = dist(keypoints_4d_normed[:,0], keypoints_4d_normed[:,1])
-                print("\nWidth of apriltag:  {} m".format(round(dist_01, 5)))
-                error = abs(0.0213 - dist_01) / 0.0213 * 100
-                print("Error:              {} %".format(round(error, 5)))
-                print("Distance to panel:  {} m".format(abs(round(keypoints_4d_normed[2,1], 5))))
+            #     dist_01 = dist(keypoints_4d_normed[:,0], keypoints_4d_normed[:,1])
+            #     print("\nWidth of apriltag:  {} m".format(round(dist_01, 5)))
+            #     error = abs(0.0213 - dist_01) / 0.0213 * 100
+            #     print("Error:              {} %".format(round(error, 5)))
+            #     print("Distance to panel:  {} m".format(abs(round(keypoints_4d_normed[2,1], 5))))
             
 
             for keypoint_A, keypoint_B, targetPoint in zip(commonKeypoints_A, commonKeypoints_B, commonTargetPoints):
@@ -290,60 +290,102 @@ class CameraChainValidator(object):
         edge = self.G.es[edge_idx]
         A_rect = edge["A"][camAnr] #some for cam B
         
-        np_image_rect = self.rectifyImages(camA.undist_image, 
-                                           edge["rect_map"][camAnr], 
-                                           camB.undist_image, 
-                                           edge["rect_map"][camBnr])
-        
-        #draw some epilines
-        np_image_rect = cv2.cvtColor(np_image_rect, cv2.COLOR_GRAY2BGR)
-        n=10
-        for i in range(0,n):
-            y = int(np_image_rect.shape[0]*i/n)
-            cv2.line(np_image_rect, (0,y), (2*np_image_rect.shape[1],y),(0,255,0));
-    
-    
-        if len(common_ids) > 0:
-            #draw error statistics
-            reproj_L2_errs = np.sum(np.abs(reproj_errs)**2, axis=-2)**(1./2)
-            outputList = [ ( "mean_x:  ", np.mean(reproj_errs[:,0]) ),
-                           ( "std_x:   ", np.std(reproj_errs[:,0]) ),
-                           ( "max_x:   ", np.max(reproj_errs[:,0]) ),
-                           ( "min_x:   ", np.min(reproj_errs[:,0]) ),
-                           ( "", 0),
-                           ( "mean_y:  ", np.mean(reproj_errs[:,1]) ),
-                           ( "std_y:   ", np.std(reproj_errs[:,1]) ),
-                           ( "max_y:   ", np.max(reproj_errs[:,1]) ),
-                           ( "min_y:   ", np.min(reproj_errs[:,1]) ),
-                           ( "", 0),
-                           ( "mean_L2: ", np.mean(reproj_L2_errs) ),
-                           ( "std_L2:  ", np.std(reproj_L2_errs) ),
-                           ( "max_L2:  ", np.max(reproj_L2_errs) ),
-                           ( "min_L2:  ", np.min(reproj_L2_errs) )      ]
+        rect_image_A, rect_image_B = self.rectifyImages(camA.undist_image, 
+                                          camB.undist_image,
+                                          edge["rect_map"][camAnr],
+                                          edge["rect_map"][camBnr])
 
-            self.total_mean_reprojection_error_x += abs(np.mean(reproj_errs[:,0]))
-            self.total_std_reprojection_error_x += abs(np.std(reproj_errs[:,0]))
-            self.total_mean_reprojection_error_y += abs(np.mean(reproj_errs[:,1]))
-            self.total_std_reprojection_error_y += abs(np.std(reproj_errs[:,1]))
-            self.total_images += 1
-    
-            #print the text
-            y = 20; x = 20
-            for err_txt, err_val in outputList:
-                fontScale = 0.75
-                y += int(42*fontScale)
-                 
-                if err_txt == "":
-                    continue
-                 
-                cv2.putText(np_image_rect, err_txt, (x,y), cv2.FONT_HERSHEY_SIMPLEX, fontScale=fontScale, color=(0, 0, 255), thickness=2)
-                cv2.putText(np_image_rect, "{0: .4f}".format(err_val), (x+100,y), cv2.FONT_HERSHEY_SIMPLEX, fontScale=fontScale, color=(0, 0, 255), thickness=2)
+        self.images_total += 1
+
+        # Initiate ORB detector
+        orb = cv2.ORB_create()
+        # find the keypoints and descriptors with ORB
+        kp1, des1 = orb.detectAndCompute(rect_image_A,None)
+        kp2, des2 = orb.detectAndCompute(rect_image_B,None)
+
+        if len(kp1) < 1 or len(kp2) < 1:
+
+            np_image_rect = np.hstack( (rect_image_A, rect_image_B) )
+            cv2.putText(np_image_rect, "Detection failed...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.0, color=(0, 0, 255), thickness=2)
+        
         else:
- 
-            cv2.putText(np_image_rect, "Detection failed...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=2, color=(0, 0, 255), thickness=3)
+            # create BFMatcher object
+            bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+
+            # Match descriptors.
+            matches = bf.match(des1,des2)
+
+            # Sort them in the order of their distance.
+            matches = sorted(matches, key = lambda x:x.distance)
+            match_len = len(matches)
+            self.matches_total += match_len
+
+            print("\nNumber of matches: {}".format(match_len))
+            print("Matches per image:  {}".format(int(self.matches_total/self.images_total)))
+
+            if match_len < 2:
+                np_image_rect = cv2.drawMatches(rect_image_A,kp1,rect_image_B,kp2,matches,None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+            else:
+                # Draw first 30 matches.
+                np_image_rect = cv2.drawMatches(rect_image_A,kp1,rect_image_B,kp2,matches[:30],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+
+            cv2.putText(np_image_rect, "Matches:  {}".format(match_len), (20,20), cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.8, color=(0, 0, 255), thickness=2)
 
         windowName = "Rectified view (cam{0} and cam{1})".format(camAnr, camBnr)
         cv2.imshow(windowName, np_image_rect)
+
+        # #combine the images    
+        # np_image_rect = np.hstack( (rect_image_A, rect_image_B) )
+        
+        # #draw some epilines
+        # np_image_rect = cv2.cvtColor(np_image_rect, cv2.COLOR_GRAY2BGR)
+        # n=10
+        # for i in range(0,n):
+        #     y = int(np_image_rect.shape[0]*i/n)
+        #     cv2.line(np_image_rect, (0,y), (2*np_image_rect.shape[1],y),(0,255,0));
+    
+    
+        # if len(common_ids) > 0:
+        #     #draw error statistics
+        #     reproj_L2_errs = np.sum(np.abs(reproj_errs)**2, axis=-2)**(1./2)
+        #     outputList = [ ( "mean_x:  ", np.mean(reproj_errs[:,0]) ),
+        #                    ( "std_x:   ", np.std(reproj_errs[:,0]) ),
+        #                    ( "max_x:   ", np.max(reproj_errs[:,0]) ),
+        #                    ( "min_x:   ", np.min(reproj_errs[:,0]) ),
+        #                    ( "", 0),
+        #                    ( "mean_y:  ", np.mean(reproj_errs[:,1]) ),
+        #                    ( "std_y:   ", np.std(reproj_errs[:,1]) ),
+        #                    ( "max_y:   ", np.max(reproj_errs[:,1]) ),
+        #                    ( "min_y:   ", np.min(reproj_errs[:,1]) ),
+        #                    ( "", 0),
+        #                    ( "mean_L2: ", np.mean(reproj_L2_errs) ),
+        #                    ( "std_L2:  ", np.std(reproj_L2_errs) ),
+        #                    ( "max_L2:  ", np.max(reproj_L2_errs) ),
+        #                    ( "min_L2:  ", np.min(reproj_L2_errs) )      ]
+
+        #     self.total_mean_reprojection_error_x += abs(np.mean(reproj_errs[:,0]))
+        #     self.total_std_reprojection_error_x += abs(np.std(reproj_errs[:,0]))
+        #     self.total_mean_reprojection_error_y += abs(np.mean(reproj_errs[:,1]))
+        #     self.total_std_reprojection_error_y += abs(np.std(reproj_errs[:,1]))
+        #     self.total_images += 1
+    
+        #     #print the text
+        #     y = 20; x = 20
+        #     for err_txt, err_val in outputList:
+        #         fontScale = 0.75
+        #         y += int(42*fontScale)
+                 
+        #         if err_txt == "":
+        #             continue
+                 
+        #         cv2.putText(np_image_rect, err_txt, (x,y), cv2.FONT_HERSHEY_SIMPLEX, fontScale=fontScale, color=(0, 0, 255), thickness=2)
+        #         cv2.putText(np_image_rect, "{0: .4f}".format(err_val), (x+100,y), cv2.FONT_HERSHEY_SIMPLEX, fontScale=fontScale, color=(0, 0, 255), thickness=2)
+        # else:
+ 
+        #     cv2.putText(np_image_rect, "Detection failed...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=2, color=(0, 0, 255), thickness=3)
+
+        # windowName = "Rectified view (cam{0} and cam{1})".format(camAnr, camBnr)
+        # cv2.imshow(windowName, np_image_rect)
     
     
     def prepareStereoRectificationMaps(self, camAnr, camBnr):        
