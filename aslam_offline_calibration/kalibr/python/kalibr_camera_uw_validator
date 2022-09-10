@@ -300,23 +300,10 @@ class CameraChainValidator(object):
         #orb = cv2.AKAZE_create()
         #orb = cv2.BRISK_create()
         #orb = cv2.KAZE_create()
-        orb = cv2.ORB_create()
+        #orb = cv2.ORB_create()
         #orb = cv2.SIFT_create()
-        
-        #orb = cv2.xfeatures2d.AffineFeature2D()
-        #orb = cv2.xfeatures2d.BoostDesc()
-        #orb = cv2.xfeatures2d.BriefDescriptorExtractor()
-        #orb = cv2.xfeatures2d.DAISY()
-        #orb = cv2.xfeatures2d.Elliptic_KeyPoint()
-        #orb = cv2.xfeatures2d.FREAK()
-        #orb = cv2.xfeatures2d.HarrisLaplaceFeatureDetector()
-        #orb = cv2.xfeatures2d.LATCH()
-        #orb = cv2.xfeatures2d.LUCID()
-        #orb = cv2.xfeatures2d.MSDDetector()
-        #orb = cv2.xfeatures2d.PCTSignatures()
-        #orb = cv2.xfeatures2d.PCTSignaturesSQFD()
-        #orb = cv2.xfeatures2d.StarDetector()
-        #orb = cv2.xfeatures2d.VGG()
+
+        orb = cv2.xfeatures2d.SURF_create(300, nOctaveLayers=2)
         
         # find the keypoints and descriptors with ORB
         kp1, des1 = orb.detectAndCompute(rect_image_A,None)
