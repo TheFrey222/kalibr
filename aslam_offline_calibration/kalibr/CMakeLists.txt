@@ -73,6 +73,7 @@ catkin_install_python(
     python/kalibr_bagextractor
     python/kalibr_camera_validator
     python/kalibr_camera_uw_validator
+    python/kalibr_feature_uw_validator
     python/kalibr_visualize_calibration
     python/kalibr_calibrate_cameras
     python/kalibr_visualize_distortion
