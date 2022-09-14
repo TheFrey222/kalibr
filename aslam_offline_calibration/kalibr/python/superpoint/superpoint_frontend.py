@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import cv2 as cv
 from superpoint.superpointnet import SuperPointNet
 
 
@@ -160,6 +161,11 @@ class SuperPointFrontend(object):
       desc = torch.nn.functional.grid_sample(coarse_desc, samp_pts)
       desc = desc.data.cpu().numpy().reshape(D, -1)
       desc /= np.linalg.norm(desc, axis=0)[np.newaxis, :]
-    return pts, desc, heatmap
+
+      pts_ = []
+      for i in range(len(pts[0, :])):
+        kp_ = cv.KeyPoint(pts[1, i], pts[0, i], pts[2, i])
+        pts_.append(kp_)
+    return pts_, desc, heatmap
 
 
