@@ -280,6 +280,13 @@ class CameraChainValidator(object):
                                           edge["rect_map"][camAnr],
                                           edge["rect_map"][camBnr])
 
+        good = []
+        good_ = []
+        kp1 = []
+        kp2 = []
+        kp1_ = []
+        kp2_ = []
+
         if self.feature == "superpoint":
             rect_image_A_ = rect_image_A.astype('float32') / 255.
             rect_image_B_ = rect_image_B.astype('float32') / 255.
@@ -315,13 +322,26 @@ class CameraChainValidator(object):
             m_idx2 = idx
 
             # Populate the final 3xN match data structure.
-            good = []
-            kp1_ = []
-            kp2_ = []
             for i in range(len(m_idx1)):
                 good.append([cv2.DMatch(m_idx1[i], m_idx2[i], scores[i])])
                 kp1_.append(kp1[m_idx1[i]].pt)
                 kp2_.append(kp2[m_idx2[i]].pt)
+
+        elif self.feature == "dense":
+            dens = cv2.stereo.QuasiDenseStereo_create((rect_image_A.shape[1], rect_image_A.shape[0]))
+            dens.process(rect_image_A, rect_image_B)
+            matches = dens.getDenseMatches()
+            for i, m in enumerate(matches):
+                good.append([cv2.DMatch(i, i, 0)])
+                kp1_.append(m.p0)
+                kp2_.append(m.p1)
+                kp1.append(cv2.KeyPoint(m.p0[0], m.p0[1], 0))
+                kp2.append(cv2.KeyPoint(m.p1[0], m.p1[1], 0))
+
+            disp_map = dens.getDisparity(100)
+            windowName = "Disparity map"
+            cv2.imshow(windowName, disp_map)
+            return
 
         else:
             # Initiate detector
@@ -365,17 +385,11 @@ class CameraChainValidator(object):
             matches = bf.knnMatch(des1,des2,k=2)
 
             # Apply ratio test
-            good = []
-            kp1_ = []
-            kp2_ = []
             for m,n in matches:
                 if m.distance < 0.8*n.distance:
                     good.append([m])
                     kp1_.append(kp1[m.queryIdx].pt)
                     kp2_.append(kp2[m.trainIdx].pt)
-
-        
-        good_ = []
 
         if len(good) < 4:
             print("Not enough matches...")
@@ -427,7 +441,7 @@ class CameraChainValidator(object):
         m_per_img = int(self.matches_total/self.images_total)
         o_per_img = int(self.outliers/self.images_total)
         self.images_total += 1
-        np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_,None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+        np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_[:50],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
         self.showWindow(np_image_rect, o_per_img, m_per_img, camAnr, camBnr)
 
         print("\nNumber of matches:  {}".format(match_len))
