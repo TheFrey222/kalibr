@@ -14,7 +14,7 @@ import time
 import numpy as np
 import argparse
 import igraph
-from math import dist
+from math import dist, isnan
 from scipy.spatial.transform import Rotation as R
 
 import superpoint as sp
@@ -65,11 +65,11 @@ class CameraChainValidator(object):
         self.feature = feature
         print(f"Selected feature detector: {feature}")
         self.fe = sp.superpoint_frontend.SuperPointFrontend(
-            weights_path="/home/astuder/catkin_ws/kalibr_ws/src/kalibr/aslam_offline_calibration/kalibr/python/superpoint/superpoint_v1.pth",
+            weights_path="/home/lian-li/catkin_ws/kalibr_ws/src/kalibr/aslam_offline_calibration/kalibr/python/superpoint/superpoint_v1.pth",
             nms_dist=4,
             conf_thresh=0.015,
             nn_thresh=0.7,
-            cuda=False)
+            cuda=True)
         self.matches_total = 0
         self.outliers = 0
         self.images_total = 1
@@ -399,7 +399,7 @@ class CameraChainValidator(object):
             m_per_img = int(self.matches_total/self.images_total)
             o_per_img = int(self.outliers/self.images_total)
             self.images_total += 1
-            np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_,None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+            np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_[:50],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
             cv2.putText(np_image_rect, "Not enough matches...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.0, color=(0, 0, 255), thickness=2)
             self.showWindow(np_image_rect, o_per_img, m_per_img, camAnr, camBnr)
             return
@@ -417,7 +417,7 @@ class CameraChainValidator(object):
             m_per_img = int(self.matches_total/self.images_total)
             o_per_img = int(self.outliers/self.images_total)
             self.images_total += 1
-            np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_,None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+            np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_[:50],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
             cv2.putText(np_image_rect, "Homography not found...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.0, color=(0, 0, 255), thickness=2)
             self.showWindow(np_image_rect, o_per_img, m_per_img, camAnr, camBnr)
             return
@@ -428,14 +428,16 @@ class CameraChainValidator(object):
             rot = R.from_matrix(mat)
             eul = rot.as_euler('zyx', degrees=True)
             for ang in eul:
-                if abs(ang) > 5:
+                if not isnan(ang):
+                    print(f"Homography angle: {int(abs(ang))}")
+                if abs(ang) > 8:
                     print("Wrong homography found...")
                     good_ = good
                     self.outliers += len(good_)
                     m_per_img = int(self.matches_total/self.images_total)
                     o_per_img = int(self.outliers/self.images_total)
                     self.images_total += 1
-                    np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_,None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+                    np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_[:50],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
                     cv2.putText(np_image_rect, "Wrong homography found...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.0, color=(0, 0, 255), thickness=2)
                     self.showWindow(np_image_rect, o_per_img, m_per_img, camAnr, camBnr)
                     return
