@@ -23,6 +23,21 @@ import superpoint as sp
 # make numpy print prettier
 np.set_printoptions(suppress=True)
 
+def get_disparity_vis(src: np.ndarray, scale: float = 1.0) -> np.ndarray:
+    '''Replicated OpenCV C++ function
+
+    Found here: https://github.com/opencv/opencv_contrib/blob/b91a781cbc1285d441aa682926d93d8c23678b0b/modules/ximgproc/src/disparity_filters.cpp#L559
+    
+    Arguments:
+        src (np.ndarray): input numpy array
+        scale (float): scale factor
+
+    Returns:
+        dst (np.ndarray): scaled input array
+    '''
+    dst = (src * scale/16.0).astype(np.uint8)
+    return dst
+
 class CalibrationTargetDetector(object):
     def __init__(self, camera, targetConfig):
 
@@ -73,12 +88,6 @@ class CameraChainValidator(object):
         self.matches_total = 0
         self.outliers = 0
         self.images_total = 1
-
-        self.total_mean_reprojection_error_x = 0
-        self.total_std_reprojection_error_x = 0
-        self.total_mean_reprojection_error_y = 0
-        self.total_std_reprojection_error_y = 0
-        self.total_images = 0
         
         self.chainConfig = chainConfig
         self.numCameras = chainConfig.numCameras()
@@ -282,6 +291,12 @@ class CameraChainValidator(object):
                                           edge["rect_map"][camAnr],
                                           edge["rect_map"][camBnr])
 
+        if self.feature == "save":
+            cv2.imwrite(f'/mnt/c/Users/Andre/Documents/MATLAB/ssd-disparity-map/input/left/{self.images_total}.png', rect_image_A)
+            cv2.imwrite(f'/mnt/c/Users/Andre/Documents/MATLAB/ssd-disparity-map/input/right/{self.images_total}.png', rect_image_B)
+            self.images_total += 1
+            return
+
         good = []
         good_ = []
         kp1 = []
@@ -330,20 +345,24 @@ class CameraChainValidator(object):
                 kp2_.append(kp2[m_idx2[i]].pt)
 
         elif self.feature == "dense":
-            dens = cv2.stereo.QuasiDenseStereo_create((rect_image_A.shape[1], rect_image_A.shape[0]))
-            dens.process(rect_image_A, rect_image_B)
-            matches = dens.getSparseMatches()
-            for i, m in enumerate(matches):
-                good.append([cv2.DMatch(i, i, 0)])
-                kp1_.append(m.p0)
-                kp2_.append(m.p1)
-                kp1.append(cv2.KeyPoint(m.p0[0], m.p0[1], 0))
-                kp2.append(cv2.KeyPoint(m.p1[0], m.p1[1], 0))
+            left_matcher = 	cv2.StereoBM.create()
+            wls_filter = cv2.ximgproc.createDisparityWLSFilter(left_matcher)
+            right_matcher = cv2.ximgproc.createRightMatcher(left_matcher)
+            left_disp = left_matcher.compute(rect_image_A, rect_image_B)
+            right_disp = right_matcher.compute(rect_image_B, rect_image_A)
 
-            # disp_map = dens.getDisparity()
-            # windowName = "Disparity map"
-            # cv2.imshow(windowName, disp_map)
-            # return
+            disp_map_vis = get_disparity_vis(left_disp)
+            windowName = "Disparity map"
+            cv2.imshow(windowName, disp_map_vis)
+
+            left_disp_fil = left_disp
+            wls_filter.filter(left_disp, camA.undist_image, left_disp_fil, right_disp)
+
+            disp_map_vis = get_disparity_vis(left_disp_fil)
+            windowName = "Disparity map filtered"
+            cv2.imshow(windowName, disp_map_vis)
+
+            return
 
         else:
             # Initiate detector
@@ -422,38 +441,34 @@ class CameraChainValidator(object):
             self.showWindow(np_image_rect, o_per_img, m_per_img, camAnr, camBnr)
             return
 
-        num, Rs, Ts, Ns  = cv2.decomposeHomographyMat(H, self.cammatrix)
-
-        for mat in Rs:
-            rot = R.from_matrix(mat)
-            eul = rot.as_euler('zyx', degrees=True)
-            for ang in eul:
-                if not isnan(ang):
-                    print(f"Homography angle: {int(abs(ang))}")
-                if abs(ang) > 8:
-                    print("Wrong homography found...")
-                    good_ = good
-                    self.outliers += len(good_)
-                    m_per_img = int(self.matches_total/self.images_total)
-                    o_per_img = int(self.outliers/self.images_total)
-                    self.images_total += 1
-                    np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_[:50],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-                    cv2.putText(np_image_rect, "Wrong homography found...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.0, color=(0, 0, 255), thickness=2)
-                    self.showWindow(np_image_rect, o_per_img, m_per_img, camAnr, camBnr)
-                    return
-
+        reprojectionError_y = 5
         outliers_len = 0
 
         for g in good:
             p1 = kp1[g[0].queryIdx].pt
             p2 = kp2[g[0].trainIdx].pt
             p1_repr = cv2.perspectiveTransform(np.array([[[p1[0],p1[1]]]]), H)
-            p1_p1_repr = dist(p2, p1_repr[0][0])
-            if p1_p1_repr < reprojectionError:
-                good_.append([g[0]])
-            else:
+            p1_p1_repr = int(dist(p2, p1_repr[0][0]))
+            p1_p2_y = int(abs(p1[1] - p2[1]))
+
+            if p1_p1_repr > reprojectionError:
                 outliers_len += 1
-                # print(f"Removed point with reprojection error of {int(p1_p1_repr)} pixels")
+                print(f"Removed point with reprojection error of {p1_p1_repr} pixels")
+            elif p1_p2_y > reprojectionError_y:
+                outliers_len += 1
+                print(f"Removed point with height difference of {p1_p2_y} pixels")
+            else:
+                good_.append([g[0]])
+
+        if len(good_) < 4:
+            print("Not enough matches...")
+            m_per_img = int(self.matches_total/self.images_total)
+            o_per_img = int(self.outliers/self.images_total)
+            self.images_total += 1
+            np_image_rect = cv2.drawMatchesKnn(rect_image_A,kp1,rect_image_B,kp2,good_[:50],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+            cv2.putText(np_image_rect, "Not enough matches...", (int(np_image_rect.shape[0]/2.0),int(np_image_rect.shape[1]/5.0)), cv2.FONT_HERSHEY_SIMPLEX, fontScale=1.0, color=(0, 0, 255), thickness=2)
+            self.showWindow(np_image_rect, o_per_img, m_per_img, camAnr, camBnr)
+            return
 
         match_len = len(good_)
         self.matches_total += match_len
