@@ -22,6 +22,7 @@ import getopt
 import igraph
 from math import dist
 import matplotlib.pyplot as plt
+import pickle
 
 
 # make numpy print prettier
@@ -71,10 +72,14 @@ class CameraChainValidator(object):
         self.matches_total = 0
         self.images_total = 1
 
-        self.total_mean_reprojection_error_x = 0
-        self.total_std_reprojection_error_x = 0
-        self.total_mean_reprojection_error_y = 0
-        self.total_std_reprojection_error_y = 0
+        self.reprojection_error_x = None
+        self.reprojection_error_y = None
+        self.total_mean_reprojection_error_x = []
+        self.total_std_reprojection_error_x = []
+        self.total_mean_reprojection_error_y = []
+        self.total_std_reprojection_error_y = []
+        self.delay_list = []
+        self.delay = 0
         self.total_images = 0
         
         self.chainConfig = chainConfig
@@ -144,6 +149,8 @@ class CameraChainValidator(object):
          
         #process the images of all cameras
         self.observations=[]
+        
+        time_cam = [0.0, 0.0]
         for cam_nr, msg in enumerate(cam_msgs):
           
             #convert image to gray single channel numpy array
@@ -165,6 +172,7 @@ class CameraChainValidator(object):
             
             #detect targets for all cams
             timestamp = acv.Time(msg.header.stamp.secs, msg.header.stamp.nsecs)
+            time_cam[cam_nr] = msg.header.stamp.secs + 1e-9 * msg.header.stamp.nsecs
             success, observation = validator.target.detector.findTarget(timestamp, np_image)
             observation.clearImage()
             validator.obs = observation
@@ -177,7 +185,8 @@ class CameraChainValidator(object):
                             
             #generate a mono view for each cam
             validator.generateMonoview(np_image, observation, success)            
-            
+        
+        self.delay = time_cam[0] - time_cam[1] 
         #generate all rectification views
         for edge in self.G.es:
             cidx_src = edge.source
@@ -251,23 +260,23 @@ class CameraChainValidator(object):
 
 
             # Estimate Apriltag size --------------------------------------------------------------------------------------------
-            keypoints_4d = cv2.triangulatePoints(self.Pna, self.Pnb, np.asarray(commonKeypoints_A), np.asarray(commonKeypoints_B))
+            # keypoints_4d = cv2.triangulatePoints(self.Pna, self.Pnb, np.asarray(commonKeypoints_A), np.asarray(commonKeypoints_B))
 
-            keypoints_4d_normed = keypoints_4d[:,:3]
+            # keypoints_4d_normed = keypoints_4d[:,:3]
 
-            if len(keypoints_4d[0,:]) > 1:
+            # if len(keypoints_4d[0,:]) > 1:
 
-                x0 = min(keypoints_4d_normed[0,:])
-                y0 = min(keypoints_4d_normed[1,:])
+            #     x0 = min(keypoints_4d_normed[0,:])
+            #     y0 = min(keypoints_4d_normed[1,:])
                 
-                keypoints_4d_normed[0,:] -= x0
-                keypoints_4d_normed[1,:] -= y0
+            #     keypoints_4d_normed[0,:] -= x0
+            #     keypoints_4d_normed[1,:] -= y0
 
-                dist_01 = dist(keypoints_4d_normed[:,0], keypoints_4d_normed[:,1])
-                print("\nWidth of apriltag:  {} m".format(round(dist_01, 5)))
-                error = abs(self.tag_size - dist_01) / self.tag_size * 100
-                print("Error:              {} %".format(round(error, 5)))
-                print("Distance to panel:  {} m".format(abs(round(keypoints_4d_normed[2,1], 5))))
+            #     dist_01 = dist(keypoints_4d_normed[:,0], keypoints_4d_normed[:,1])
+            #     print("\nWidth of apriltag:  {} m".format(round(dist_01, 5)))
+            #     error = abs(self.tag_size - dist_01) / self.tag_size * 100
+            #     print("Error:              {} %".format(round(error, 5)))
+            #     print("Distance to panel:  {} m".format(abs(round(keypoints_4d_normed[2,1], 5))))
             # --------------------------------------------------------------------------------------------------------------------
             
 
@@ -314,26 +323,60 @@ class CameraChainValidator(object):
         if len(common_ids) > 0:
             #draw error statistics
             reproj_L2_errs = np.sum(np.abs(reproj_errs)**2, axis=-2)**(1./2)
-            outputList = [ ( "mean_x:  ", np.mean(reproj_errs[:,0]) ),
-                           ( "std_x:   ", np.std(reproj_errs[:,0]) ),
-                           ( "max_x:   ", np.max(reproj_errs[:,0]) ),
-                           ( "min_x:   ", np.min(reproj_errs[:,0]) ),
+            outputList = [ ( "mean_x:  ", np.mean(reproj_errs[0,:]) ),
+                           ( "std_x:   ", np.std( reproj_errs[0,:]) ),
+                           ( "max_x:   ", np.max( reproj_errs[0,:]) ),
+                           ( "min_x:   ", np.min( reproj_errs[0,:]) ),
                            ( "", 0),
-                           ( "mean_y:  ", np.mean(reproj_errs[:,1]) ),
-                           ( "std_y:   ", np.std(reproj_errs[:,1]) ),
-                           ( "max_y:   ", np.max(reproj_errs[:,1]) ),
-                           ( "min_y:   ", np.min(reproj_errs[:,1]) ),
+                           ( "mean_y:  ", np.mean(reproj_errs[1,:]) ),
+                           ( "std_y:   ", np.std( reproj_errs[1,:]) ),
+                           ( "max_y:   ", np.max( reproj_errs[1,:]) ),
+                           ( "min_y:   ", np.min( reproj_errs[1,:]) ),
                            ( "", 0),
                            ( "mean_L2: ", np.mean(reproj_L2_errs) ),
-                           ( "std_L2:  ", np.std(reproj_L2_errs) ),
-                           ( "max_L2:  ", np.max(reproj_L2_errs) ),
-                           ( "min_L2:  ", np.min(reproj_L2_errs) )      ]
+                           ( "std_L2:  ", np.std( reproj_L2_errs) ),
+                           ( "max_L2:  ", np.max( reproj_L2_errs) ),
+                           ( "min_L2:  ", np.min( reproj_L2_errs) )      ]
 
-            self.total_mean_reprojection_error_x += abs(np.mean(reproj_errs[:,0]))
-            self.total_std_reprojection_error_x += abs(np.std(reproj_errs[:,0]))
-            self.total_mean_reprojection_error_y += abs(np.mean(reproj_errs[:,1]))
-            self.total_std_reprojection_error_y += abs(np.std(reproj_errs[:,1]))
+            if self.reprojection_error_x is None:
+                self.reprojection_error_x = np.array(reproj_errs[0,:])
+                self.reprojection_error_y = np.array(reproj_errs[1,:])
+                
+            else:
+                self.reprojection_error_x = np.append(self.reprojection_error_x, reproj_errs[0,:], axis=0)
+                self.reprojection_error_y = np.append(self.reprojection_error_y, reproj_errs[1,:], axis=0)
+                
+            self.total_mean_reprojection_error_x.append(np.mean(reproj_errs[0,:]))
+            self.total_std_reprojection_error_x.append(  np.std(reproj_errs[0,:]))
+            self.total_mean_reprojection_error_y.append(np.mean(reproj_errs[1,:]))
+            self.total_std_reprojection_error_y.append  (np.std(reproj_errs[1,:]))
+            self.delay_list.append(self.delay)
             self.total_images += 1
+            
+            # print(f"Stereo:")
+            # print(f"reproj_errs: \t{reproj_errs}")
+            # print(f"reproj_errs[0,:]: \t{reproj_errs[0,:]}")
+            # print(f"reprojection_error_x: \t{self.reprojection_error_x}")
+            # print(f"delay_list: \t{self.delay_list}")
+            # print(f"std_rep_error_x:  \t{self.total_std_reprojection_error_x}")
+            # print(f"mean_rep_error_y: \t{np.median(self.total_mean_reprojection_error_y)}")
+            # print(f"std_rep_error_y:  \t{np.median(self.total_std_reprojection_error_y)}\n")
+            
+            with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/s_tot_x", "wb") as fmx:
+                pickle.dump(self.reprojection_error_x, fmx)
+            with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/s_mean_x", "wb") as fmx:
+                pickle.dump(self.total_mean_reprojection_error_x, fmx)
+            with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/s_std_x", "wb") as fsx:
+                pickle.dump(self.total_std_reprojection_error_x, fsx)
+            with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/s_tot_y", "wb") as fmy:
+                pickle.dump(self.reprojection_error_y, fmy)
+            with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/s_mean_y", "wb") as fmy:
+                pickle.dump(self.total_mean_reprojection_error_y, fmy)
+            with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/s_std_y", "wb") as fsy:
+                pickle.dump(self.total_std_reprojection_error_y, fsy)
+                
+            with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/delay", "wb") as dt:
+                pickle.dump(self.delay_list, dt)
     
             #print the text
             y = 20; x = 20
@@ -430,10 +473,12 @@ class CameraChainValidator(object):
 class MonoCameraValidator(object):
     def __init__(self, camConfig, targetParams):
         
-        self.total_mean_reprojection_error_x = 0
-        self.total_std_reprojection_error_x = 0
-        self.total_mean_reprojection_error_y = 0
-        self.total_std_reprojection_error_y = 0
+        self.reprojection_error_x = None
+        self.reprojection_error_y = None
+        self.total_mean_reprojection_error_x = []
+        self.total_std_reprojection_error_x = []
+        self.total_mean_reprojection_error_y = []
+        self.total_std_reprojection_error_y = []
         self.total_images = 0
 
         print("initializing camera geometry")
@@ -486,26 +531,69 @@ class MonoCameraValidator(object):
             self.reprojectionErrors.append(reprojectionErrors)
             
             outputList = [ ( "mean_x:  ", np.mean(reprojectionErrors2[:,0]) ),
-                           ( "std_x:   ", np.std(reprojectionErrors2[:,0]) ),
-                           ( "max_y:   ", np.max(reprojectionErrors2[:,0]) ),
-                           ( "min_x:   ", np.min(reprojectionErrors2[:,0]) ),
+                           ( "std_x:   ", np.std( reprojectionErrors2[:,0]) ),
+                           ( "max_y:   ", np.max( reprojectionErrors2[:,0]) ),
+                           ( "min_x:   ", np.min( reprojectionErrors2[:,0]) ),
                            ( "", 0),
                            ( "mean_y:  ", np.mean(reprojectionErrors2[:,1]) ),
-                           ( "std_y:   ", np.std(reprojectionErrors2[:,1]) ),
-                           ( "max_y:   ", np.max(reprojectionErrors2[:,1]) ),
-                           ( "min_y:   ", np.min(reprojectionErrors2[:,1]) ),
+                           ( "std_y:   ", np.std( reprojectionErrors2[:,1]) ),
+                           ( "max_y:   ", np.max( reprojectionErrors2[:,1]) ),
+                           ( "min_y:   ", np.min( reprojectionErrors2[:,1]) ),
                            ( "", 0),
                            ( "mean_L2: ", np.mean(reprojectionErrors) ),
                            ( "std_L2:  ", np.std(reprojectionErrors) ),
                            ( "max_L2:  ", np.max(reprojectionErrors) ),
                            ( "min_L2:  ", np.min(reprojectionErrors) )      ]
+            
+            if self.reprojection_error_x is None:
+                self.reprojection_error_x = np.array(reprojectionErrors2[:,0])
+                self.reprojection_error_y = np.array(reprojectionErrors2[:,1])
+                
+            else:
+                self.reprojection_error_x = np.append(self.reprojection_error_x, reprojectionErrors2[:,0], axis=0)
+                self.reprojection_error_y = np.append(self.reprojection_error_y, reprojectionErrors2[:,1], axis=0)
 
-            self.total_mean_reprojection_error_x += abs(np.mean(reprojectionErrors2[:,0]))
-            self.total_std_reprojection_error_x += abs(np.std(reprojectionErrors2[:,0]))
-            self.total_mean_reprojection_error_y += abs(np.mean(reprojectionErrors2[:,1]))
-            self.total_std_reprojection_error_y += abs(np.std(reprojectionErrors2[:,1]))
+            self.total_mean_reprojection_error_x.append(np.mean(reprojectionErrors2[:,0]))
+            self.total_std_reprojection_error_x.append(  np.std(reprojectionErrors2[:,0]))
+            self.total_mean_reprojection_error_y.append(np.mean(reprojectionErrors2[:,1]))
+            self.total_std_reprojection_error_y.append(  np.std(reprojectionErrors2[:,1]))
             self.total_images += 1
-    
+            
+            # print(f"reprojectionErrors2: \t{reprojectionErrors2}")
+            # print(f"reprojectionErrors2[0,:]: \t{reprojectionErrors2[:,0]}")
+            
+            # print(f"Monocular:")
+            # print(f"mean_rep_error_x: \t{np.median(self.total_mean_reprojection_error_x)}")
+            # print(f"std_rep_error_x:  \t{np.median(self.total_std_reprojection_error_x)}")
+            # print(f"mean_rep_error_y: \t{np.median(self.total_mean_reprojection_error_y)}")
+            # print(f"std_rep_error_y:  \t{np.median(self.total_std_reprojection_error_y)}\n")
+            
+            if self.topic[8] == "l":
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/l_tot_x", "wb") as ftx:
+                    pickle.dump(self.reprojection_error_x, ftx)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/l_mean_x", "wb") as fmx:
+                    pickle.dump(self.total_mean_reprojection_error_x, fmx)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/l_std_x", "wb") as fsx:
+                    pickle.dump(self.total_std_reprojection_error_x, fsx)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/l_tot_y", "wb") as fty:
+                    pickle.dump(self.reprojection_error_y, fty)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/l_mean_y", "wb") as fmy:
+                    pickle.dump(self.total_mean_reprojection_error_y, fmy)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/l_std_y", "wb") as fsy:
+                    pickle.dump(self.total_std_reprojection_error_y, fsy)
+            else:
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/r_tot_x", "wb") as ftx:
+                    pickle.dump(self.reprojection_error_x, ftx)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/r_mean_x", "wb") as fmx:
+                    pickle.dump(self.total_mean_reprojection_error_x, fmx)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/r_std_x", "wb") as fsx:
+                    pickle.dump(self.total_std_reprojection_error_x, fsx)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/r_tot_y", "wb") as fty:
+                    pickle.dump(self.reprojection_error_y, fty)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/r_mean_y", "wb") as fmy:
+                    pickle.dump(self.total_mean_reprojection_error_y, fmy)
+                with open("/mnt/d/Datasets/221102_tiefenbrunnen/camera/r_std_y", "wb") as fsy:
+                    pickle.dump(self.total_std_reprojection_error_y, fsy)
 
             #print the text
             y = 20; x = 20
